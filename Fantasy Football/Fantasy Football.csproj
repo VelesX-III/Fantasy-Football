@@ -145,6 +145,7 @@
     <None Include="util\optional_boolean.proto" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="DDL and Data.sql" />
     <Content Include="orLogo.png" />
     <Content Include="Players.Context.tt">
       <Generator>TextTemplatingFileGenerator</Generator>
