@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Google.OrTools.LinearSolver;
 
@@ -27,7 +28,6 @@ namespace Fantasy_Football
         {
             Fantasy_FootballEntities entities = new Fantasy_FootballEntities();
             List<Player> playerList = new List<Player>();
-            Dictionary<Player, List<Player>> playerDictionary = new Dictionary<Player, List<Player>>();
             foreach (Player player in entities.Players) //This could be done with SQL UNION operator, but this is faster.
             {
                 playerList.Add(player);
@@ -38,14 +38,15 @@ namespace Fantasy_Football
                 playerList.Add(new Player() { Name = player.Name, Position = "B5", Price = player.Price, ProjectedPoints = player.ProjectedPoints * ((double)1 / (double)32), Team = player.Team });
                 playerList.Add(new Player() { Name = player.Name, Position = "B6", Price = player.Price, ProjectedPoints = player.ProjectedPoints * ((double)1 / (double)64), Team = player.Team });
             }
-            Player[] playerArray = playerList.ToArray();
+
             DataModel data = new DataModel();
             // Create the linear solver with the SCIP backend.
             Solver solver = Solver.CreateSolver("SCIP");
-            Variable[] players = new Variable[playerArray.Length]; //This will be arranged bijectively with playerArray[].
-            for (int j = 0; j < playerArray.Length; j++)
+
+            Dictionary<Player, Variable> players = new Dictionary<Player, Variable>();
+            foreach (Player player in playerList)
             {
-                players[j] = solver.MakeIntVar(0, 1, playerArray[j].Name + " as " + playerArray[j].Position);
+                players[player] = solver.MakeIntVar(0, 1, player.Name + " of " + player.Team + " as " + player.Position);
             }
             Console.WriteLine("Number of variables = " + solver.NumVariables());
 
@@ -60,27 +61,80 @@ namespace Fantasy_Football
 
             //Sum of salaries must be below 100.
             Constraint salaryCap = solver.MakeConstraint(0, 100, "Max Salary");
-            for (int i = 0; i < players.Length; i++)
+            foreach (Player player in players.Keys)
             {
-                salaryCap.SetCoefficient(players[i], playerArray[i].Price);
+                salaryCap.SetCoefficient(players[player], player.Price);
             }
 
-            //Sum of players must be below 15.
+            //Number of players must be below 15.
             Constraint rosterCap = solver.MakeConstraint(0, 15, "Roster Size Limit");
-            for (int i = 0; i < players.Length; i++)
+            foreach (Player player in players.Keys)
             {
-                rosterCap.SetCoefficient(players[i], 1);
+                salaryCap.SetCoefficient(players[player], 1);
             }
 
             //Sum of starting casts for each player must be equal to or less than 1.
-            Constraint castCap = solver.MakeConstraint(0,1,)
+            List<Constraint> castCaps = new List<Constraint>();
+            foreach (var group in players.Keys.GroupBy(p => new { p.Name, p.Team })) //Get all the unique individuals. This is bijective with the primary key of the table.
+            {
+                Constraint castCap = solver.MakeConstraint(0, 1, group.Key.Name + " of " + group.Key.Team + " position restriction.");
+                foreach (var player in group)
+                {
+                    castCap.SetCoefficient(players[player], 1);
+                }
+                castCaps.Add(castCap);
+            }
+
+            Console.WriteLine(castCaps.Count);
+
+            //QB count must be between 1.
+            Constraint QBCap = solver.MakeConstraint(1, 1, "QB Limit");
+            foreach (Player player in players.Keys.Where(p => p.Position == "QB"))
+            {
+                salaryCap.SetCoefficient(players[player], 1);
+            }
+
+            //WR count must be between 3.
+            Constraint WRCap = solver.MakeConstraint(3, 3, "WR Limit");
+            foreach (Player player in players.Keys.Where(p => p.Position == "WR"))
+            {
+                salaryCap.SetCoefficient(players[player], 1);
+            }
+
+            //RB count must be between 3.
+            Constraint RBCap = solver.MakeConstraint(2, 2, "RB Limit");
+            foreach (Player player in players.Keys.Where(p => p.Position == "RB"))
+            {
+                salaryCap.SetCoefficient(players[player], 1);
+            }
+
+            //TE count must be between 3.
+            Constraint TECap = solver.MakeConstraint(1, 1, "TE Limit");
+            foreach (Player player in players.Keys.Where(p => p.Position == "TE"))
+            {
+                salaryCap.SetCoefficient(players[player], 1);
+            }
+
+            //K count must be between 3.
+            Constraint KCap = solver.MakeConstraint(1, 1, "K Limit");
+            foreach (Player player in players.Keys.Where(p => p.Position == "K"))
+            {
+                salaryCap.SetCoefficient(players[player], 1);
+            }
+
+            //DEF count must be between 3.
+            Constraint DEFCap = solver.MakeConstraint(1, 1, "DEF Limit");
+            foreach (Player player in players.Keys.Where(p => p.Position == "DEF"))
+            {
+                salaryCap.SetCoefficient(players[player], 1);
+            }
 
             Console.WriteLine("Number of constraints = " + solver.NumConstraints()); //For the record, whoever wrote this library has no clue what accessors are in C#.
 
             Objective objective = solver.Objective();
-            for (int j = 0; j < players.Length; ++j)
+            foreach (var player in players.Keys)
             {
-                objective.SetCoefficient(players[j], data.ObjCoeffs[j]);
+                objective.SetCoefficient(players[player], player.ProjectedPoints);
             }
             objective.SetMaximization();
 
@@ -96,10 +150,10 @@ namespace Fantasy_Football
             Console.WriteLine("Solution:");
             Console.WriteLine("Optimal objective value = " + solver.Objective().Value());
 
-            for (int j = 0; j < data.NumVars; ++j)
-            {
-                Console.WriteLine("players[" + j + "] = " + players[j].SolutionValue());
-            }
+            //for (int j = 0; j < data.NumVars; ++j)
+            //{
+            //    Console.WriteLine("players[" + j + "] = " + players[j].SolutionValue());
+            //}
 
             Console.WriteLine("\nAdvanced usage:");
             Console.WriteLine("Problem solved in " + solver.WallTime() + " milliseconds");
